@@ -1,8 +1,14 @@
-#ifndef INCLUDE_playground_eval_eval_h_
-#define INCLUDE_playground_eval_eval_h_
+#ifndef EVAL_H
+#define EVAL_H
 
-#include "term.h"
+#include "expr.h"
 
-Term *eval(Term *t, int verbose);
+/*
+ * eval(e, verbose)
+ *
+ * Reduce e to full normal form via iterated small steps.
+ * If verbose != 0, print each intermediate step.
+ */
+Expr *eval(Expr *e, int verbose);
 
-#endif // INCLUDE_playground_eval_eval_h_
+#endif /* EVAL_H */

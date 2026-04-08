@@ -1,8 +1,26 @@
-#ifndef INCLUDE_playground_parse_h_
-#define INCLUDE_playground_parse_h_
+#ifndef PARSE_H
+#define PARSE_H
 
-#include "term.h"
+#include "expr.h"
 
-Term *parse(const char *src);
+/*
+ * parse(src)  — parse a complete expression from a string.
+ *
+ * Grammar (informal):
+ *
+ *   expr  ::= '\' x ':' expr '.' expr      -- λ-abstraction
+ *           | 'Pi' x ':' expr '.' expr     -- Π-type
+ *           | 'if' expr 'then' expr 'else' expr
+ *           | app ('->' expr)*             -- right-assoc non-dep Pi sugar
+ *           | app
+ *
+ *   app   ::= atom+                        -- left-associative
+ *
+ *   atom  ::= x  |  '*'  |  '□'  |  'Bool'  |  'true'  |  'false'
+ *           | '(' expr ')'
+ *
+ * '->' is sugar for Π_ :A. B  when the variable is not needed.
+ */
+Expr *parse(const char *src);
 
-#endif // INCLUDE_playground_parse_h_
+#endif /* PARSE_H */

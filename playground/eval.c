@@ -2,103 +2,99 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 
-/* Substitution: [x := s] t */
-Term *subst(const char *x, Term *s, Term *t) {
-  switch (t->tag) {
-  case TM_TRUE:
-    return mk_true();
-  case TM_FALSE:
-    return mk_false();
+#include "subst.h"
 
-  case TM_VAR:
-    return strcmp(t->var, x) == 0 ? s : mk_var(t->var);
+/* ------------------------------------------------------------------ */
+/* is_value: irreducible in call-by-value                               */
+/* ------------------------------------------------------------------ */
 
-  case TM_ABS:
-    if (!strcmp(t->param, x))
-      return mk_abs(t->param, t->param_ty, t->body); /* shadowed */
-    /* TODO: alpha-rename if x appears free in t->body and param is free in s.
-       For simplicity we assume no variable capture in these examples. */
-    return mk_abs(t->param, t->param_ty, subst(x, s, t->body));
-
-  case TM_APP:
-    return mk_app(subst(x, s, t->fun), subst(x, s, t->arg));
-
-  case TM_IF:
-    return mk_if(subst(x, s, t->cond), subst(x, s, t->then_br),
-                 subst(x, s, t->else_br));
-  }
-  return NULL;
+static int is_value(const Expr *e) {
+    switch (e->tag) {
+        case E_STAR: case E_BOX:
+        case E_TRUE: case E_FALSE: case E_BOOL:
+        case E_LAM:  case E_PI:
+            return 1;
+        default:
+            return 0;
+    }
 }
 
-int is_value(Term *t) {
-  return t->tag == TM_TRUE || t->tag == TM_FALSE || t->tag == TM_ABS;
+/* ------------------------------------------------------------------ */
+/* Small-step reduction                                                 */
+/* Returns NULL if e is already in normal form.                         */
+/* ------------------------------------------------------------------ */
+
+static Expr *step(const Expr *e) {
+    switch (e->tag) {
+        /* Normal forms */
+        case E_STAR: case E_BOX:
+        case E_TRUE: case E_FALSE: case E_BOOL:
+        case E_VAR:
+            return NULL;
+
+        /* Reduce type annotations in binders */
+        case E_LAM: {
+            Expr *ty2 = step(e->type);
+            if (ty2) return e_lam(e->binder, ty2, expr_clone(e->body));
+            Expr *b2  = step(e->body);
+            if (b2)  return e_lam(e->binder, expr_clone(e->type), b2);
+            return NULL;
+        }
+        case E_PI: {
+            Expr *ty2 = step(e->type);
+            if (ty2) return e_pi(e->binder, ty2, expr_clone(e->body));
+            Expr *b2  = step(e->body);
+            if (b2)  return e_pi(e->binder, expr_clone(e->type), b2);
+            return NULL;
+        }
+
+        case E_APP: {
+            /* E-App1: reduce function */
+            if (!is_value(e->fun)) {
+                Expr *f2 = step(e->fun);
+                if (f2) return e_app(f2, expr_clone(e->arg));
+            }
+            /* E-App2: reduce argument */
+            if (!is_value(e->arg)) {
+                Expr *a2 = step(e->arg);
+                if (a2) return e_app(expr_clone(e->fun), a2);
+            }
+            /* E-Beta */
+            if (e->fun->tag == E_LAM)
+                return subst(e->fun->binder, e->arg, e->fun->body);
+            return NULL;
+        }
+
+        case E_IF: {
+            if (e->cond->tag == E_TRUE)  return expr_clone(e->then_br);
+            if (e->cond->tag == E_FALSE) return expr_clone(e->else_br);
+            Expr *c2 = step(e->cond);
+            if (c2) return e_if(c2, expr_clone(e->then_br), expr_clone(e->else_br));
+            return NULL;
+        }
+    }
+    return NULL;
 }
 
-/* Returns NULL if no step possible (i.e., already a value or stuck) */
-Term *step(Term *t) {
-  switch (t->tag) {
-  case TM_TRUE:
-  case TM_FALSE:
-  case TM_ABS:
-    return NULL; /* values, no step */
+/* ------------------------------------------------------------------ */
+/* Multi-step to normal form                                            */
+/* ------------------------------------------------------------------ */
 
-  case TM_VAR:
-    return NULL; /* stuck (shouldn't happen after type check) */
-
-  case TM_APP: {
-    /* E-App1: step the function */
-    if (!is_value(t->fun)) {
-      Term *fun2 = step(t->fun);
-      return fun2 ? mk_app(fun2, t->arg) : NULL;
+Expr *eval(Expr *e, int verbose) {
+    int steps = 0;
+    while (1) {
+        Expr *e2 = step(e);
+        if (!e2) return e;          /* normal form reached */
+        steps++;
+        if (verbose) {
+            printf("  \xe2\x86\x92 ");   /* → */
+            expr_println(e2);
+        }
+        e = e2;
+        if (steps > 100000) {
+            fprintf(stderr, "Evaluation error: too many steps\n");
+            exit(1);
+        }
     }
-    /* E-App2: function is a value, step the argument */
-    if (!is_value(t->arg)) {
-      Term *arg2 = step(t->arg);
-      return arg2 ? mk_app(t->fun, arg2) : NULL;
-    }
-    /* E-AppAbs: beta reduction */
-    if (t->fun->tag == TM_ABS) {
-      return subst(t->fun->param, t->arg, t->fun->body);
-    }
-    return NULL; /* stuck */
-  }
-
-  case TM_IF: {
-    /* E-IfTrue / E-IfFalse */
-    if (t->cond->tag == TM_TRUE)
-      return t->then_br;
-    if (t->cond->tag == TM_FALSE)
-      return t->else_br;
-    /* E-If: step condition */
-    Term *cond2 = step(t->cond);
-    return cond2 ? mk_if(cond2, t->then_br, t->else_br) : NULL;
-  }
-  }
-  return NULL;
-}
-
-/* Multi-step evaluation (big step via iterated small steps) */
-Term *eval(Term *t, int verbose) {
-  int steps = 0;
-  while (!is_value(t)) {
-    Term *t2 = step(t);
-    if (!t2) {
-      fprintf(stderr, "Evaluation error: stuck term\n");
-      exit(1);
-    }
-    steps++;
-    if (verbose) {
-      printf("  step %d: ", steps);
-      print_term(t2);
-      printf("\n");
-    }
-    t = t2;
-    if (steps > 10000) {
-      fprintf(stderr, "Evaluation error: too many steps (infinite loop?)\n");
-      exit(1);
-    }
-  }
-  return t;
 }

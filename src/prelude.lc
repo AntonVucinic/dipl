@@ -1,0 +1,6 @@
+-- Standard prelude for λC
+-- Loaded automatically at startup.
+
+inductive Unit : * := | tt : Unit end
+inductive Nat  : * := | zero : Nat | succ : Nat -> Nat end
+inductive List (A : *) : * := | nil : List A | cons : A -> List A -> List A end

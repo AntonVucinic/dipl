@@ -1,0 +1,5 @@
+-- hello.lc — a simple λC program
+
+effect greet := putStr "Hello, World!\n"
+
+effect main := greet

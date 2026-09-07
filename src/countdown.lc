@@ -1,0 +1,13 @@
+-- countdown.lc
+effect print3 := putChar '3'
+effect print2 := putChar '2'
+effect print1 := putChar '1'
+effect newline := putChar '\n'
+effect main :=
+    bind Unit Unit print3              (\u:Unit.
+    bind Unit Unit newline             (\u:Unit.
+    bind Unit Unit print2              (\u:Unit.
+    bind Unit Unit newline             (\u:Unit.
+    bind Unit Unit print1              (\u:Unit.
+    bind Unit Unit newline             (\u:Unit.
+    putStr "Go!\n"                     ))))))

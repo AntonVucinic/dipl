@@ -1,0 +1,1001 @@
+\documentclass[diplomskirad,upload]{fer}
+
+\title{Implementation and security of a programing language with dependent types}
+\naslov{Implementacija i sigurnost programskog jezika sa zavisnim tipovima podataka}
+\brojrada{1221}
+\author{Anton Vučinić}
+\mentor{izv. prof. dr. sc. Ante Đerek}
+\date{February, 2026}
+\datum{veljača, 2026}
+
+\begin{document}
+
+\maketitle
+
+\zadatak{hr_0036523672_94.pdf}
+
+\begin{zahvale}
+  % TODO: napiši zahvalu
+\end{zahvale}
+
+\mainmatter
+
+\begin{sazetak}
+Zavisni tipovi podataka omogućuju izražavanje bogatijih semantičkih svojstava
+programa unutar samog sustava tipova, čime pridonose formalnoj provjeri
+ispravnosti. U ovom radu proučen je razvoj sustava tipova u funkcijskom
+programiranju, od netipiziranog lambda računa kroz jednostavno tipizirani lambda
+račun i polimorfne sustave do računa induktivnih konstrukcija kao teorijske
+osnove zavisnih tipova. Analizirani su postojeći programski jezici koji
+podržavaju zavisne tipove s naglaskom na njihov
+pristup i namijenjenu primjenu. Na temelju tih uvida dizajniran je i
+implementiran eksperimentalni funkcijski programski jezik sa zavisnim tipovima.
+Jezik je zasnovan na računu konstrukcija i podržava Pi-tip, induktivne tipove s
+eliminatorom te jednostavne ulazno-izlazne operacije. Razvijeni jezik primijenjen je na probleme iz domene
+računalne sigurnosti. Rješenja su uspoređena s ekvivalentnim
+implementacijama u konvencionalnom programskom jeziku, s posebnim naglaskom na
+sigurnosna svojstva koja zavisni tipovi omogućuju, a koja konvencionalni jezici
+ne mogu statički zajamčiti.
+\end{sazetak}
+
+\begin{kljucnerijeci}
+    zavisni tipovi; semantička analiza; provjera tipova; lambda račun; račun konstrukcija
+\end{kljucnerijeci}
+
+
+% Abstract in English
+\begin{abstract}
+Dependent types enable expressing richer semantic properties of programs within
+the type system, contributing to formal verification. This work studies the
+development of types in functional programing, from untyped lambda calculus
+through the simply typed lambda calculus and polymorphic systems throuh the
+calculus of inductive constructions as a theoretical basis of dependent types.
+Existing dependently typed programming languages were analysed focusing on their
+approach and intended use. Based on the gained insights we develop an
+experimental functional dependently typed programing language. The language is
+based on the calculus of constructions and supports the Pi type, inductive types
+with automatic eliminator generation and simple IO operations. The developed
+language is applied to common cybersecurity probelms. The developed solutions
+are compared with equivalent solutions in conventional programing languages with
+a special focus on security features provided by depenedent types but lacking in
+conventional languages.
+\end{abstract}
+
+\begin{keywords}
+    dependent types; semantic analysis; type checking; lambda calculus; calculus of constructions
+\end{keywords}
+
+
+\tableofcontents
+
+\chapter{Uvod}
+
+\chapter{Razvoj sustava tipova u funkcijskom programiranju}
+
+Započinjemo kratkim pregledom razvoja tipskih sustava unutar funkcijskih jezika.
+
+\section{Netipizirani lambda račun}
+
+Lambda račun \engl{lambda calculus} je formalni sustav izračuna koji je
+tridesetih godina dvadesetog stoljeća uveo Alonzo Church
+\cite{15897363-af72-3dac-82e6-fde144ad66c0}. Church je originalno uveo lambda
+račun u svojem radu na temeljima matematike gdje je primarna primjena jezika
+bila formalizam, ali otkako je uspostavljeno da je netipizirani lambda račun
+univerzalni stroj, t.j. da može simulirati bilokoji Turingov stroj
+\cite{Turing_1937}, njegove inačice često se koriste kao osnova funkcijskih programskih jezika.
+
+Sam jezik iznimno je jednostavan i sastoji se od samo tri konstrukta. Upravo iz
+tog razloga, uzevši u obzir njegovu moć izračuna, koristi se kao temelj za mnoštvo
+funkcijskih programskih jezika. Jezik se može definirati sljedećim izrazima:
+
+\begin{itemize}
+    \item Varijabla - identifikator koji se odnosi na neku vrijednost
+    \item Apstrakcija - \((\lambda x.\ t)\), gdje je \(x\) ime parametra funkcije, a
+        \(t\) je valjani lambda izraz
+    \item Aplikacija - \((t\ s)\), gdje su \(t\) i \(s\) valjani lambda izrazi
+\end{itemize}
+
+Precizna definicija jezika koristeći sljedeću Backus-Naur notaciju
+\engl{Backus-Naur form, BNF} je:
+\[
+    e ::= x\ |\ (\lambda x.\ e)\ |\ (e\ e)
+\]
+
+gdje \(x\) predstavlja vrijednost iz beskonačnog skupa imena varijabli.
+
+Osim same definicije jezika, postoje i tri konverzije koje nam omogućuju
+rasuđivanje o jednakosti dvaju različitih izraza.
+
+\subsection{Alfa-konverzija}
+
+Ova konverzija definira intuitivnu ideju da izbor imena varijabli u lambda
+apstrakciji uglavnom nije bitan. Ako se \(y\) ne pojavljuje u izrazu \(M\), onda su
+izrazi \((\lambda x.\ M)\) i\break \((\lambda y.\ M[x:=y])\) jednaki. \(M[x:=y]\) označava
+izraz \(M\) u kojem je svaka pojava varijable \(x\) zamijenjena s \(y\). Na primjer:
+\[
+    (\lambda x.\ ((* x)\ x)) = (\lambda y.\ ((* y)\ y))
+\]
+
+\((*\ x)\) je funkcija koja kao argument prima neki broj i množi ga s \(x\).
+Drugim riječima \(*\) je funkcija koja vraća funkciju, a tek kad se tom
+rezultatu preda još jedan argument dobivamo broj.\footnote{Brojevi i neke
+funkcije ugrađeni su u naš jezik zbog jednostavnosti demonstracije, ali sve
+vrste podataka i funkcije nad njima moguće je izgraditi isključivo koristeći
+lambda apstrakcije}
+
+\subsection{Beta-konverzija}
+
+Ovo pravilo možemo podijeliti na dva smjera, beta-redukciju i beta-apstrakciju.
+Beta-redukcija zapravo je glavni mehanizam koji pogoni izračunljivost ovog
+jezika. Ona nam govori o tome kako reducirati aplikaciju oblika
+\(((\lambda x.\ t)\ s)\). Ovo je aplikacija funkcije \((\lambda x.\ t)\) s
+argumentom \(s\) i kao što bismo mogli pretpostaviti, vrijednost ovog izraza
+jednaka je izrazu \(t[x:=s]\). U slijedećem primjeru svaki red predstavlja jedan
+korak beta-redukcije u odnosu na prethodni. Redoslijed odabira redeksa (redukcijskih izraza) u
+slučaju kad postoji više aplikacija nije bitan za konačni rezultat
+\cite{ce15f5c7-12e9-3586-af6c-63c4f99b8176}.
+\begin{align*}
+    &(((\lambda f.\ (\lambda x.\ (f\ x)))\ (\lambda y.\ y))\ z) \\
+    &((\lambda x.\ ((\lambda y.\ y)\ x))\ z) \\
+    &((\lambda y.\ y)\ z) \\
+    &z
+\end{align*}
+
+Također je moguće primijeniti isto pravilo unazad, u kojem slučaju se govori o
+beta-apstrakciji, pomoću koje možemo dodavati nove apstrakcije našim izrazima
+bez da mijenjamo njihovo značenje.
+
+\subsection{Eta-konverzija}
+
+Zadnje pravilo konverzije koje nam govori o jednakosti funkcija koje ne izgledaju isto je
+eta-redukcija. Ako imamo funkciju \(F\), ona je jednaka izrazu
+\((\lambda x.\ (F\ x))\), ako se \(x\) ne pojavljuje u njoj. Ovo pravilo omogućuje
+nam eliminaciju nepotrebnih apstrakcija, u kojem slučaju se zove eta-redukcija.
+Prethodno smo objasnili značenje izraza poput \((*\ 10)\). ,,Tradicionalan''
+način zapisivanja funkcije koja množi svoj parametar s 10 bi bio \((\lambda x.\
+((*\ 10)\ x))\), no budući da je \((*\ 10)\) funkcija i da se \(x\) ne
+pojavljuje u njoj možemo pojednostavniti izraz na \((*\ 10)\).
+
+\section{Jednostavno tipizirani lambda račun}
+
+Netipizirani lambda račun, kako je opisan u prethodnom poglavlju, ima neka
+nepoželjna svojstva koja su motivirala razvoj tipskih sustava.
+
+U izrazu \(((\lambda x.\ (x\ x))\ 42)\), pokušavamo primijeniti broj 42 kao
+funkciju. U tijelu apstrakcije broj \(42\) aplicira se na još jednu instancu
+istog broja. Iako je ovaj izraz sasvim validna lambda apstrakcija ne možemo ga
+reducirati dalje od \((42\ 42)\) što je izraz kojem ne možemo dodijeliti
+korisnu matematičku vrijednost budući da generalno razlikujemo brojeve kao
+zasebne objekte od funkcija.
+
+U jednostavno tipiziranom lambda računu \engl{simply typed lambda calculus, STLC} definiramo
+koncept tipa podatka. Svaki dobro tipizirani \engl{well typed} izraz lambda računa ima
+odgovarajući tip. Tipovi se definiraju sljedećom BNF gramatikom:
+\[
+    \tau ::= \tau \to \tau |\ T
+\]
+
+gdje je \(T\) tip iz skupa osnovnih tipova. U našem slučaju, osim ako je
+drugačije navedeno, skup osnovnih tipova sastojat će se od \(Int\) (tipa cijelih
+brojeva) i \(Bool\) (tipa logičkih vrijednosti). Izraz \(e\) u jednostavno
+tipiziranom lambda računu sličan je onom iz netipiziranog lambda računa, a
+razlika je što svakoj apstrakciji specificiramo tip parametra te dodajemo
+konstante \(c\) za odgovarajuće osnovne tipove.
+\[
+    e ::= x\ |\ \lambda x : \tau .\ e\ |\ e\ e\ |\ c
+\]
+
+Da bi izraz u ovom jeziku bio valjan mora biti dobro tipiziran, t.j. mora imati
+valjan tip u nekom tipskom okruženju \(\mathbf{\Gamma}\). Tipska okruženja su
+skupovi mapiranja između izraza i tipova \(x:\sigma\) koje predstavlja da izraz
+\(x\) ima tip \(\sigma\). Da bismo dokazali tipski sud \(\mathbf{\Gamma} \vdash
+e : \sigma\) koji govori da izraz \(e\) u okruženju \(\mathbf{\Gamma}\) ima
+određeni tip \(\sigma\), koristimo tipska pravila. Tipska pravila govore koje zaključke
+(ispod linije) možemo povući iz premisa (iznad linije). U STLC koristimo
+slijedeća pravila:
+\begin{equation}
+    \frac{x : \sigma \in \mathbf{\Gamma}}{\mathbf{\Gamma} \vdash x: \sigma}
+    \label{eq:STLC-lookup}
+\end{equation}
+\begin{equation}
+    \frac{c \text{ je konstanta tipa } T}{\mathbf{\Gamma} \vdash c : T}
+    \label{eq:STLC-constant}
+\end{equation}
+\begin{equation}
+    \frac{\mathbf{\Gamma} , x : \sigma \vdash e : \tau}{\mathbf{\Gamma} \vdash
+    (\lambda x : \sigma .\ e) : (\sigma \to \tau )}
+    \label{eq:STLC-abs}
+\end{equation}
+\begin{equation}
+    \frac{\mathbf{\Gamma} \vdash e_{1} : \sigma \to \tau \quad \mathbf{\Gamma}
+    \vdash e_{2} : \sigma}{\mathbf{\Gamma} \vdash e_{1}\ e_{2} : \tau}
+    \label{eq:STLC-app}
+\end{equation}
+
+Pravilo \ref{eq:STLC-lookup} govori nam da prisutnost mapiranja između izraza i
+nekog tipa u okruženju znači da taj izraz ima određeni tip.
+\ref{eq:STLC-constant} govori o tipovima ugrađenih konstanti. Iz pravila
+\ref{eq:STLC-abs} možemo zaključiti o tipu abstrakcije. Ono nam govori da ako
+imamo neko okruženje prošireno mapiranjem \(x : \sigma\) iz kojeg možemo
+zaključiti tip izraza \(e : \tau\) onda u originalnom okruženju (bez dodanog
+mapiranja) možemo zaključiti da apstrakcija \(\lambda x : \sigma.\ e\) ima tip
+\(\sigma \to \tau\). \ref{eq:STLC-app} govori o aplikaciji i zahtjeva da je
+lijevi izraz funkcija tip čijeg parametra odgovara tipu argumenta t.j. tipu
+desnog izraza.
+
+Ako se vratimo na uvodni primjer možemo primijetiti da izrazu \(42 42\) ne
+možemo dokazati tipski sud što znači da nije dobro tipiziran. Iako je taj izraz
+sintaktički valjan, budući da nije dobro tipiziran kažemo da nije valjan unutar
+STLC-a.
+
+\section{Polimorfni sustavi tipova}
+\label{sec:poly}
+
+Jedno od mogućih proširenja STLC-a je dodavanje polimorfnih tipova. Ako
+razmotrimo funkciju \(\lambda x : \_ .\ x\), u kojoj \(\_\) predstavlja neki tip
+kojeg još nismo ispunili, možemo se zapitati koje je sve tipove moguće koristiti u
+toj praznini i u tom slučaju koji je tip tijela apstrakcije i cijelog izraza. U
+ovom slučaju validno je instancirati ovu apstrakciju s bilokojim mogućim tipom i
+dobili bismo dobro tipiziranu apstrakciju. Iz suprotnog gledišta možemo
+primijetiti kako apstrakcije \(\lambda x : Int .\ x\) i \(\lambda x : Bool .\
+x\) rade skoro identičnu stvar. Ako ih apliciramo na argument odgovarajućeg tipa
+i obavimo beta redukciju rezultat će biti jednak tom argumentu. Ovo je
+motivacija iza polimorfnih tipova. Mnoštvo funkcija ne ovisi o konkretnom tipu
+svog argumenta i u tom slučaju za svaku moguću tip kojem bi je htjeli aplicirati
+moramo izgraditi novu apstrakciju. Umjesto toga možemo uvesti novu vrstu
+apstrakcije koja nam omogućava da definiramo tipske varijable. STLC proširen
+ovakvim apstrakcijama često se zove lambda račun drugog reda ili sistem F.
+\begin{equation}
+    \Lambda \alpha. \lambda x : \alpha.\ x
+    \label{eq:systemF-id}
+\end{equation}
+
+Naravno nije dovoljno dodati samo tipske apstrakcije već i tipske aplikacije.
+\ref{eq:systemF-id} je primjer funkcije identiteta koja radi s bilokojim tipom,
+a kako bismo dobili konkretnu funkciju možemo ju instancirati, npr.:
+\begin{align*}
+    &(\Lambda \alpha. \lambda x : \alpha.\ x)\ Int\ 3 \\
+    &(\lambda x : Int.\ x)\ 3 \\
+    &3
+\end{align*}
+
+Apstrakcija identiteta je funkcija na razini tipova koja kao rezultat beta
+redukcije vraća lambda izraz. Drugim riječima, gore navedeni izraz ovisno o
+primjenjenom tipu vraća novi izraz.
+
+Za potrebe novih sintaksnih konstrukta definiraju se i nova tipska pravila:
+\begin{equation}
+    \frac{\mathbf{\Gamma} \vdash M : \forall \alpha .\ \sigma}{\mathbf{\Gamma}
+    \vdash M\ \tau : \sigma [\tau / \alpha]}
+    \label{eq:systemF-tapp}
+\end{equation}
+\begin{equation}
+    \frac{\mathbf{\Gamma}, \text{tip}\ \alpha \vdash M : \sigma}
+    {\mathbf{\Gamma} \vdash \Lambda \alpha .\ M : \forall \alpha .\ \sigma }
+    \label{eq:systemF-tabs}
+\end{equation}
+
+U \ref{eq:systemF-tapp} se vidi da izraz koji za svaki tip \(\alpha\) vraća tip
+\(\sigma\) možemo aplicirati tipom \(\tau\) i dobiti izraz čiji tip je jednak
+\(\sigma\) sa svakom instancom tipa \(\alpha\) zamijenjenom tipom \(\tau\). Konkretno:
+\begin{align*}
+    &(\Lambda \alpha. \lambda x : \alpha.\ x) & : \forall \alpha.\ \alpha \to \alpha \\
+    &(\Lambda \alpha. \lambda x : \alpha.\ x)\ Int & : Int \to Int \\
+\end{align*}
+
+\(\mathbf{\Gamma}, \text{tip}\ \alpha\) u \ref{eq:systemF-tabs} označava okruženje
+\(\mathbf{\Gamma}\) u kojem je \(\alpha\) neki konkretan tip, a ne tipska
+varijabla. Pravilo govori da izraz \(M\) koji u tom okruženju ima tip \(\sigma\)
+povlači da u okruženju bez tog dodatka tipska apstrakcija \(\Lambda \alpha.\ M\)
+ima tip \(\forall \alpha.\ \sigma\).
+
+\section{Tipski konstruktori}
+
+Drugo proširenje koje možemo dodati STLC-u su tipski konstruktori. Ako nam je
+sistem F omogućavao vrijednosti koje ovise o tipovima, tipski konstruktori
+omogućavaju tipove koji ovise o tipovima. Ovo proširenje rijetko se koristi u
+izolaciji i često se koristi zajedno s polimorfnim sustavima tipova. Primjer
+tipskog konstruktora su kontejnerske podatkovne strukture poput listi. U jeziku
+koji podržava liste trebali bismo u skup osnovnih tipova dodati tip za listu
+svakog tipa (\(IntList\), \(BoolList\), itd.). Umjesto toga proširujemo skup
+osnovnih tipova s konstruktorom liste \(List\) i uvodimo koncept vrste \engl{kind}. Postoje
+vrste tipova \(*\) i vrste funkcija nad tipovima \(J \to K\) gdje su \(J\) i
+\(K\) proizvoljne vrste. Konstruktor liste ima vrstu \(* \to *\), što znači da
+nakon aplikacije tog konstruktora nad nekim konkretnim tipom dobivamo novi tip
+npr. \(List\ Int\).
+
+\section{Zavisni tipovi}
+
+Zadnje proširenje koje ćemo razmatrati su zavisni tipovi \engl{dependent
+types}. Za razliku od tipskih konstruktora gdje tipovi ovise o drugim tipovima,
+zavisni tipovi ovise o \emph{vrijednostima}. To omogućuje izražavanje mnogo
+bogatijih svojstava programa direktno unutar sustava tipova.
+
+Intuitivno, zavisni tip možemo shvatiti kao tip koji se parametrizira
+vrijednošću. Klasičan primjer je tip vektora fiksne duljine: dok bi u STLC-u
+tip liste bio samo \(List\ Int\) bez informacije o duljini, u sustavu s
+zavisnim tipovima možemo izraziti \(Vec\ Int\ n\), tip vektora cijelih
+brojeva duljine \(n\), gdje je \(n\) konkretna vrijednost poznata u trenutku
+provjere tipova.
+
+\subsection{Pi-tip}
+
+Temeljni konstrukt zavisnih tipova jest \emph{zavisni tip funkcije} ili
+\emph{Pi-tip} \engl{dependent function type, Pi-type} i bilježi se kao:
+\[
+    \Pi (x : A).\ B(x)
+\]
+
+Pi-tip opisuje funkcije čiji se \emph{tip povratne vrijednosti} mijenja
+ovisno o predanom argumentu. Ako je \(f : \Pi (x : A).\ B(x)\) i \(a : A\),
+tada je \(f\ a : B(a)\). Specijalni slučaj gdje \(B\) ne ovisi o \(x\) (tj.\
+\(B\) je konstantna funkcija) daje uobičajeni funkcijski tip \(A \to B\), što
+znači da je Pi-tip generalizacija funkcijskog tipa iz STLC-a.
+
+\subsection{Sigma-tip}
+
+Dualan konstrukt Pi-tipu jest \emph{zavisni tip para}, poznat kao
+\emph{Sigma-tip} \engl{dependent pair type, Sigma-type} ili \emph{zavisni
+zbroj} \engl{dependent sum}:
+\[
+    \Sigma (x : A).\ B(x)
+\]
+
+Sigma-tip opisuje uređene parove \((a,\ b)\) gdje je \(a : A\) i \(b : B(a)\), t.j.
+tip druge komponente ovisi o vrijednosti prve komponente. Kao i kod Pi-tipa,
+specijalni slučaj gdje \(B\) ne ovisi o \(x\) daje uobičajeni produkt tipova
+\(A \times B\).
+
+\subsection{Matematičko-logička interpretacija}
+
+Zavisni tipovi imaju duboku vezu s matematičkom logikom kroz
+\emph{Curry-Howardovu izomorfiju} \engl{Curry-Howard correspondence}
+\cite{Howard80} koja uspostavlja korespondenciju između tipova i logičkih
+tvrdnji te između programa i dokaza:
+
+\begin{itemize}
+    \item Pi-tip \(\Pi (x : A).\ B(x)\) odgovara \emph{univerzalnoj kvantifikaciji}:
+    ,,za svaki \(x : A\), vrijedi \(B(x)\)''
+    \item Sigma-tip \(\Sigma (x : A).\ B(x)\) odgovara \emph{egzistencijalnoj
+    kvantifikaciji}: ,,postoji \(x : A\) takav da vrijedi \(B(x)\)''
+    \item Program koji ima tip \(T\) jest ujedno i \emph{dokaz} tvrdnje \(T\)
+\end{itemize}
+
+Ova izomorfija znači da programski jezici sa zavisnim tipovima mogu ujedno
+služiti kao sustavi za formalne matematičke dokaze, što je temeljna motivacija
+iza jezika poput Coqa i Agde koje ćemo opisati u idućem poglavlju.
+
+\section{Lambda kocka}
+
+Do sada smo opisali nekoliko proširenja lambda računa: od STLC-a, koji
+uvodi tipove, do sistem F-a koji dodaje polimorfizam, do tipskih konstruktora koji
+uvode ovisnost tipova o tipovima, i konačno do zavisnih tipova koji uvode
+ovisnost tipova o vrijednostima. Barendregt je 1991.\ godine predložio elegantnu
+klasifikaciju koja ove sustave organizira u strukturu poznatu kao
+\emph{lambda kocka} \engl{lambda cube} \cite{Barendregt_1991}.
+
+\subsection{Dimenzije kocke}
+
+Lambda kocka je struktura u kojoj STLC čini vrh kocke u ishodištu, a svaki
+pomak po bridu vodi nas do vrha koji odgovara inačici jezika koji ima proširenje
+koje odgovara jednoj vrsti ovisnosti između izraza i tipova:
+
+\begin{itemize}
+    \item \textbf{Izrazi koji ovise o tipovima}: polimorfizam kakav smo vidjeli
+    u sistem F-u - funkcije koje primaju tip kao argument i vraćaju izraz.
+    Primjer: \(\Lambda \alpha.\ \lambda x : \alpha.\ x\).
+
+    \item \textbf{Tipovi koji ovise o tipovima}: tipski konstruktori poput
+    \(List\) koji primaju tip i vraćaju novi tip.
+
+    \item \textbf{Tipovi koji ovise o izrazima}: zavisni tipovi, tj.\ Pi-tip i
+    Sigma-tip koji smo opisali u prethodnoj sekciji.
+\end{itemize}
+
+Kombiniranjem ove tri dimenzije dobivamo osam sustava koji tvore vrhove kocke.
+Svaki sustav strogo proširuje sustave s kojima dijeli brid.
+
+\section{Račun induktivnih konstrukcija}
+\label{sec:cic}
+
+U vrhu lambda kocke nalazi se \emph{račun konstrukcija} \engl{calculus of
+constructions, CoC} koji su razvili Coquand i Huet 1986.\ godine
+\cite{coquand:inria-00076024}. Račun konstrukcija integrira sve tri dimenzije lambda
+kocke: polimorfizam, tipske konstruktore i zavisne tipove. Međutim, za
+praktičnu primjenu u programskim jezicima i dokazivačima teorema, račun
+konstrukcija proširuje se mehanizmom induktivnih tipova, čime nastaje
+\emph{račun induktivnih konstrukcija} \engl{calculus of inductive
+constructions, CIC} \cite{10.1007/3-540-52335-9_47}.
+
+\subsection{Induktivni tipovi}
+
+Induktivni tipovi omogućuju definiranje tipova rekurzivnom specifikacijom
+njihovih konstruktora. Primjerice, tip prirodnih brojeva \(Nat\) može se
+definirati s dva konstruktora:
+
+\begin{itemize}
+    \item \(zero : Nat\) - konstruktor nule
+    \item \(succ : Nat \to Nat\) - konstruktor sljedbenika
+\end{itemize}
+
+Uz definiciju induktivnog tipa automatski se generira i pripadajući \emph{princip
+eliminacije} \engl{elimination principle} koji omogućuje definiranje funkcija i
+dokazivanje svojstava za sve elemente tog tipa. Za \(Nat\) taj princip
+odgovara matematičkoj indukciji: da bismo dokazali svojstvo \(P\) za sve
+prirodne brojeve, dovoljno je dokazati \(P(zero)\) i implikaciju \(\forall n :
+Nat,\ P(n) \to P(succ\ n)\).
+
+Zavisni tipovi ključni su za potpunu snagu induktivnih tipova. Tip \(Vec\ A\ n\)
+vektora duljine \(n\) može se definirati kao induktivni tip parametriziran
+brojem elemenata:
+
+\begin{itemize}
+    \item \(nil : Vec\ A\ zero\) - prazan vektor ima duljinu nula
+    \item \(cons : A \to Vec\ A\ n \to Vec\ A\ (succ\ n)\) - dodavanjem
+    elementa duljina se povećava za jedan
+\end{itemize}
+
+Tip \(Vec\ A\ n\) kodira duljinu vektora u tipu, što omogućuje statičku
+provjeru ispravnosti operacija poput indeksiranja. Ovo je tema koju ćemo
+detaljno razraditi u praktičnom dijelu rada.
+
+\subsection{Svemiri}
+
+CIC uvodi i hijerarhiju \emph{svemira} \engl{universes} koji klasificiraju
+tipove:
+
+\begin{itemize}
+    \item \(\mathbf{Prop}\) - svemir logičkih tvrdnji. Elementi \(\mathbf{Prop}\)
+    su tvrdnje, a njihovi stanovnici su dokazi. Dokazi iste tvrdnje smatraju se
+        jednakima (princip \emph{irelevantnosti dokaza} \engl{proof irrelevance}).
+    \item \(\mathbf{Set}\) - svemir računskih tipova kao što su \(Nat\),
+    \(Bool\) ili \(List\ A\).
+    \item \(\mathbf{Type}_i\) - hijerarhija svemira za izbjegavanje paradoksa.
+    Vrijedi \(\mathbf{Set} : \mathbf{Type}_0 : \mathbf{Type}_1 : \cdots\), čime
+    se osigurava konzistentnost sustava.
+\end{itemize}
+
+Razdvajanje \(\mathbf{Prop}\) i \(\mathbf{Set}\) temeljno je za primjenu u
+dokazivačima teorema: logički dokazi mogu se eliminirati iz izvršnog koda jer
+nemaju računski sadržaj. Taj mehanizam osnova je ekstrakcije koda u Coqu.
+
+\subsection{Značaj za ovaj rad}
+
+CIC čini teorijsku osnovu dokazivača Rocq \cite{rocq}, koje ćemo
+analizirati u sljedećem poglavlju. Naš eksperimentalni jezik neće implementirati
+punu snagu CIC-a, izostavit ćemo hijerarhiju svemira i napredne oblike
+indukcije, ali će temeljni mehanizmi biti izravno inspirirani ovim sustavom:
+Pi-tip kao osnova zavisnih funkcija, provjera tipova redukcijom na normalnu
+formu, i primjena zavisnih tipova za statičko garantiranje sigurnosnih svojstava
+programa.
+
+\chapter{Pregled postojećih jezika sa zavisnim tipovima}
+
+Zavisni tipovi su teorijski dobro utemeljeni već desetljećima, no tek je
+nekoliko programskih jezika uspješno integriralo te ideje u praktično upotrebljiv
+oblik. U ovom poglavlju opisujemo četiri takva jezika - Rocq, Agdu,
+Idris i Lean, s naglaskom na njihov pristup zavisnim tipovima, namijenjenu
+publiku i praktična ograničenja.
+
+\section{Rocq}
+
+Rocq (ranije poznat kao Coq) \cite{rocq} interaktivni je dokazivač teorema i
+programski jezik koji se razvija od 1984.\ godine na francuskom institutu INRIA.
+Teorijska osnova jezika jest CIC koji smo opisali u prethodnom poglavlju.
+
+Osnovna paradigma rada s Rocqom jest interaktivna izgradnja dokaza. Korisnik
+postavlja tvrdnju koju želi dokazati, a Rocq prikazuje trenutno stanje dokaza
+kao skup \emph{ciljeva} \engl{goals} koje treba ispuniti. Korisnik zatim
+primjenjuje \emph{taktike} \engl{tactics}, naredbe koje transformiraju stanje
+dokaza, sve dok svi ciljevi nisu riješeni. Ova paradigma čini Rocq posebno
+pogodnim za formalizaciju matematike i verifikaciju softvera.
+
+Iz kuta programiranja, Rocq podržava ekstrakciju koda \engl{code extraction}:
+dokazani program može se automatski prevesti u OCaml, Haskell ili Scheme, pri
+čemu se logički dijelovi (dokazi) eliminiraju, a ostaje samo računski sadržaj.
+
+Glavno ograničenje Rocqa jest strma krivulja učenja - taktički jezik i
+mehanizam interaktivnih dokaza zahtijevaju značajno iskustvo prije nego što
+postanu produktivni. Osim toga, Rocq ne podržava opću rekurziju: sve funkcije
+moraju biti strukturalno rekurzivne kako bi se zajamčila terminacija.
+
+\section{Agda}
+
+Agda \cite{agda} je funkcionalni programski jezik sa zavisnim tipovima
+koji je razvio Ulf Norell na Chalmersovom sveučilištu u Göteborgu. Za razliku
+od Rocqa, Agda je primarno zamišljena kao programski jezik u kojem dokazi i
+programi imaju isti status - nema posebnog taktičkog sloja, već se dokazi
+pišu kao obični izrazi.
+
+Agda koristi \emph{usporedbu konstruktora} \engl{pattern matching} na
+zavisnim tipovima kao središnji mehanizam za definiranje funkcija i pisanje
+dokaza. Prevoditelj provjerava je li usporedba \emph{iscrpno}
+\engl{exhaustive} i je li rekurzija \emph{strukturalno smanjujuća}
+\engl{structurally decreasing}, čime se osigurava terminacija. Agda podržava i
+\emph{svemire} \engl{universes} na način sličan CIC-u.
+
+Sintaksa Agde bliska je Haskellu što ju čini privlačnom programerima
+funkcijskih jezika. Aktivno se koristi u akademskim krugovima za formalizaciju
+teorije tipova i programskih jezika.
+
+Možda glavno ograničenje Agde je manjak popularnosti u produkcijskim
+okruženjima, što uzrokuje manjak dugotrajne podške za jezik i slabo razvijen
+ekosustav alata.
+
+\section{Idris}
+
+Idris \cite{idris} je funkcionalni programski jezik sa zavisnim tipovima
+kojeg je razvio Edwin Brady. Za razliku od Rocqa i Agde čiji je primarni fokus
+verifikacija, Idris je dizajniran s ciljem da zavisne tipove učini dostupnima
+za svakodnevno programiranje.
+
+Centralna ideja Idrisa jest da zavisni tipovi trebaju biti \emph{first-class}
+alat u rukama programera, a ne samo formalnih matematičara. Jezik podržava
+\emph{rupe} \engl{holes}, t.j. mjesta u programu koja korisnik još nije ispunio,
+a prevoditelj ispisuje koji tip na tom mjestu očekuje. Ovaj mehanizam čini
+razvoj zavisno tipiziranih programa interaktivnim i iterativnim.
+
+Idris 2, druga iteracija jezika, donosi ključno poboljšanje:
+zasnovan je na \emph{kvantitativnoj teoriji tipova} \engl{quantitative type
+theory, QTT} koja uz tipove prati i koliko puta se svaki resurs koristi.
+Ovaj mehanizam omogućuje programeru eksplicitno praćenje vrijednosti koje se
+brišu prilikom izvođenja programa. Ako se sjetimo polimorfnih funkcija iz
+poglavlja \ref{sec:poly} u kojima smo tipove, kao i vrijednosti, tretirali kao
+parametre funkcije možemo vidjeti da nakon provjere ispravnosti programa
+značajnu količinu parametara funkcije nećemo više trebati te ih možemo sigurno
+izbrisati. Iako većina funkcijskih jezika ovo radi automatski za sve tipove, ako
+može zaključiti tip, Idris ostavlja programeru na izbor odluku o brisanju
+vrijednosti.
+
+Trenutna slabost Idrisa je prestanak podrške za prvu verziju dok je druga
+verzija još u fazi aktivnog razvoja, no za temu ovog rada Idris je posebno
+zanimljiv upravo zbog naglaska na primjenjivu sigurnost: pristup kojim zavisni
+tipovi direktno garantiraju sigurnosna svojstva programa blizak je pristupu
+koji ćemo razviti u praktičnom dijelu.
+
+\section{Lean}
+
+Lean \cite{lean} je interaktivni dokazivač teorema i programski jezik
+kojeg razvija Lean FRO, a njegova četvrta verzija (Lean 4) doživjela
+je značajnu popularizaciju u matematičkoj zajednici. Teorijska osnova Leana je
+\emph{teorija zavisnih tipova s kumulativnim svemirima} i \emph{kvocijentnim
+tipovima} \engl{quotient types}.
+
+Lean 4 razlikuje se od prethodnih verzija po tome što je ujedno i ,,pravi''
+programski jezik u kojemu je Lean prevoditelj sam napisan. Sustav
+\emph{makroa} \engl{macros} i \emph{metaprogramiranja} \engl{metaprogramming}
+omogućuju proširivanje sintakse i automatizaciju dokaza na razini koja nije
+dostupna u ostalim navedenim jezicima.
+
+Posebno je vrijedno istaknuti projekt Mathlib \cite{mathlib2020}, zajednički
+repozitorij formaliziranog matematičkog znanja koji danas sadrži stotine tisuća
+dokazanih teorema. Mathlib je učinio Lean de facto standardnim alatom za
+formalizaciju suvremene matematike i privukao velik broj korisnika izvan
+tradicionale zajednice verifikacije softvera.
+
+Za razliku od Idrisa, Lean nije primarno orijentiran na primjenu zavisnih
+tipova u svakodnevnom programiranju, već na formalne dokaze. Lean 4 pokušava
+premostiti taj jaz, no ekosustav i stil pisanja i dalje su bliži Rocqu i Agdi
+nego Idrisu.
+
+\section{Usporedba pristupa}
+
+Tablica~\ref{tab:usporedba-jezika} daje sažeti pregled opisanih jezika prema
+nekoliko ključnih dimenzija.
+
+\begin{table}[hbt]
+\centering
+\begin{tabular}{|l|l|l|l|l|}
+\hline
+ & \textbf{Rocq} & \textbf{Agda} & \textbf{Idris 2} & \textbf{Lean 4} \\
+\hline
+Teorijska osnova   & CIC          & UTT / MLTT     & QTT          & CIC + proširenja \\
+Primarni fokus     & Verifikacija & Prog. / dokazi & Programiranje & Matematika \\
+Taktički jezik     & Da           & Ne             & Djelomično   & Da \\
+Opća rekurzija     & Ne           & Ne             & Da           & Ne \\
+Ekstrakcija koda   & Da           & Da             & N/P          & Da \\
+\hline
+\end{tabular}
+\caption{Usporedba jezika sa zavisnim tipovima}
+\label{tab:usporedba-jezika}
+\end{table}
+
+Svi opisani jezici dijele zajednički temelj - Pi-tip kao mehanizam zavisnih
+funkcija i induktivne tipove za definiranje podatkovnih struktura - ali se
+razlikuju u naglasku. Rocq i Lean ciljaju na formalne dokaze uz poseban
+taktički sloj, Agda na ekspresivno programiranje bliskog matematičkom stilu, a
+Idris na primjenu zavisnih tipova u inženjerskom kontekstu.
+
+Za naš eksperimentalni jezik, najbliži uzor jest Idris: cilj nije izgraditi
+dokazivač teorema, već pokazati kako zavisni tipovi mogu statički
+garantirati sigurnosna svojstva programa relevantna za računalnu sigurnost. U
+sljedećem poglavlju opisujemo dizajn tog jezika.
+
+\chapter{Dizajn programskog jezika}
+
+Ovaj diplomski rad rezultirao je implementacijom eksperimentalnog funkcijskog
+programskog jezika sa zavisnim tipovima koji ćemo u nastavku zvati jednostavno
+\emph{jezik}. Jezik je dizajniran s jednim primarnim ciljem: demonstrirati kako
+zavisni tipovi mogu statički garantirati sigurnosna svojstva programa. Nije
+cilj izgraditi jezik opće namjene ni ,,pravi'' dokazivač teorema, već
+minimalan ali konzistentan sustav koji je dovoljan za tu svrhu.
+
+\section{Ciljevi dizajna}
+
+Dizajn jezika vođen je sljedećim načelima:
+
+\begin{itemize}
+    \item \textbf{Minimalnost} - jezik sadrži samo konstrukte nužne za
+    izražavanje zavisnih tipova i demonstraciju sigurnosnih svojstava. Svaki
+    dodani konstrukt mora opravdati svoju prisutnost.
+
+    \item \textbf{Teorijska utemeljenost} - jezik je izravno inspiriran računom
+    konstrukcija opisanim u poglavlju \ref{sec:cic}. Sintaksa je namjerno bliska
+    matematičkoj notaciji lambda računa kako bi veza s teorijom bila jasna.
+
+    \item \textbf{Jednostavnost implementacije} - jezik je dizajniran tako da ga
+    je moguće implementirati u razumnoj količini koda bez oslanjanja na vanjske
+    programske knjižnice. Cijela implementacija napisana je u programskom jeziku C.
+
+    \item \textbf{Ekspresivnost za sigurnosne primjene} - jezik mora biti
+    dovoljno izražajan da izrazi tipove koji nose sigurnosna jamstva, kao što
+    su vektori fiksne duljine čiji tip kodira duljinu.
+\end{itemize}
+
+\section{Sintaksa}
+
+Sintaksa jezika nalik je notaciji lambda računa koja se koristi u teorijskim
+tekstovima, s minimalnim proširenjima za praktičnu upotrebu.
+
+\subsection{Izrazi}
+
+Osnovna gramatika izraza definirana je rekurzivno:
+
+\[
+e ::= x \mid \lambda x : e.\ e \mid \Pi x : e.\ e \mid e\ e \mid e \to e
+\mid \star \mid \square
+\]
+\[
+\quad\mid\ \texttt{if}\ e\ \texttt{then}\ e\ \texttt{else}\ e
+\mid \texttt{elim}\ \ldots
+\mid \texttt{true} \mid \texttt{false} \mid \texttt{Bool}
+\mid n \mid \texttt{'c'} \mid \texttt{"..."}
+\]
+
+Varijable (\(x\)) su identifikatori iz slova, znamenki i podcrte. Aplikacija argumenta funkcije je
+lijevo-asocijativna, t.j. \(f\ x\ y\) parsira se kao \((f\ x)\ y\). Strelica
+\(\to\) je desno-asocijativni sintaksni šećer \engl{syntactic sugar} za
+Pi-tip bez ovisnosti: \(A \to B\) skraćenica je za \(\Pi \_ : A.\ B\).
+\(n\) predstavlja bilokoji prirodni broj, \texttt{'c'} predstavlja bilokoji znak
+pod jednostrukim navodnicima koji se pretvara u prirodni broj koji odgovara svom
+Unicode kodnom točkom, a \texttt{"..."} predstavlja bilokoji niz znakova pod
+dvostrukim navodnicima koji se pretvara u listu prirodnih brojeva.
+
+\subsection{Svemiri}
+
+Jezik razlikuje dvije razine klasifikacije:
+
+\begin{itemize}
+    \item \(\star\) (\texttt{*}) - \emph{tip tipova}, tj.\ svemir u koji
+    spadaju konkretni tipovi podataka poput \(Nat\) ili \(Bool\). Primjerice,
+    \(Nat : \star\) i \(Bool : \star\).
+    \item \(\square\) (\texttt{Box}) - \emph{vrsta}, t.j. tip svemira.
+    Vrijedi \(\star : \square\). Ova razina postoji kako bi provjera tipova
+    bila konzistentna pri tipiziranju samog svemira \(\star\).
+\end{itemize}
+
+Ova dvoslojna hijerarhija dovoljna je za implementaciju zavisnih tipova bez
+ulaženja u beskonačnu kumulativnu hijerarhiju svemira kakvu koristi CIC.
+
+\subsection{Induktivni tipovi}
+
+Induktivni tipovi deklariraju se posebnom sintaksom:
+
+\begin{verbatim}
+inductive T (p1 : P1) ... : * :=
+  | c1 : A1
+  | c2 : A2
+end
+\end{verbatim}
+
+gdje je \texttt{T} ime tipa, \texttt{p1}, \ldots parametri tipa, a
+\texttt{c1}, \texttt{c2}, \ldots konstruktori s njihovim tipovima. Na primjer,
+tip prirodnih brojeva deklarira se kao:
+
+\begin{verbatim}
+inductive Nat : * :=
+  | zero : Nat
+  | succ : Nat -> Nat
+end
+\end{verbatim}
+
+a parametrizirani tip vektora kao:
+
+\begin{verbatim}
+inductive Vec (A : *) : Nat -> * :=
+  | nil  : Vec A zero
+  | cons : Pi n : Nat. A -> Vec A n -> Vec A (succ n)
+end
+\end{verbatim}
+
+Upisivanjem \texttt{Vec} u interaktivnu ljusku nakon definicije možemo vidijeti
+da je njegov tip \texttt{* -> Nat -> *}. Upravo ovo je mehanizam zavisnih tipova koji kodira
+duljinu vektora u tipu.
+
+\subsection{Eliminator}
+
+Za analizu vrijednosti induktivnih tipova koristi se \texttt{elim} izraz:
+
+\begin{verbatim}
+elim <izraz>
+  return <motiv>
+  with
+    | <konstruktor> <args>* then <tijelo>
+    ...
+end
+\end{verbatim}
+
+\texttt{elim} odgovara principu eliminacije induktivnog tipa. \emph{Motiv}
+\engl{motive} je izraz koji opisuje tip rezultata ovisno o skrutiniranoj
+\engl{scrutinee} vrijednosti - ovdje se očituje zavisnost tipa o vrijednosti.
+Svaka grana pokriva jedan konstruktor, a \texttt{args} imenuju
+argumente konstruktora unutar tijela grane. Parser automatski derivira tipove
+vezača iz eliminatorovog Pi-tipa i umeće ih kao anotacije lambda apstrakcija.
+Na primjer, zbrajanje prirodnih brojeva može se definirati kao:
+
+\begin{verbatim}
+\n : Nat. \m : Nat.
+  elim n
+    return \_ : Nat. Nat
+    with
+      | zero       then m
+      | succ k ih  then succ ih
+    end
+\end{verbatim}
+
+\subsection{Definicije i IO}
+
+Simbol \texttt{:=} asocira izraz s imenom kojeg možemo kasnije referencirati:
+
+\begin{verbatim}
+ime := izraz
+\end{verbatim}
+
+Definicija se tipski provjeri i pohrani u globalni kontekst pa je dostupna u
+svim kasnijim izrazima. Osim običnih definicija, jezik podržava i definiciju
+ulazno-izlaznih operacija. Dodavanjem ključne riječi \texttt{effect} prije
+definicije simbola pretvara njegov tip (tipski konstruktor) iz \texttt{A} u \texttt{IO A}. \texttt{IO}
+je primitivni tip koji omogućava interakciju s vanjskim svijetom i kao takav
+nije dozvoljen izvan funkcija s popratnim efektima. Ulazno-izlazne operacije
+su također ugrađene kao primitivi: \texttt{putChar},
+\texttt{getChar}, \texttt{putStr}. Ulazno-izlazne operacije
+imaju tip \texttt{IO\ A}, kombinator \texttt{pure} umeće vrijednost u
+\texttt{IO}, a
+\texttt{bind} sekvencira akcije. Ovaj pristup preuzet je iz mnoštva funkcijskih
+jezika, prvobitno Haskell-a, a specifična implementacija napravljena je po uzoru
+na \cite{peytonjones2001tackling}.
+
+\begin{verbatim}
+effect main := bind Nat Nat
+    getChar (\c:Nat.
+    putChar c)
+\end{verbatim}
+
+\section{Sustav tipova}
+
+Sustav tipova jezika temelji se na tipskim pravilima računa konstrukcija
+opisanog u poglavlju~\ref{sec:cic}, prilagođenima minimalnom skupu konstrukata
+koje jezik podržava.
+
+\subsection{Tipski sudovi}
+
+Tipski sud \(\Gamma \vdash e : T\) govori da u okruženju \(\Gamma\) izraz
+\(e\) ima tip \(T\). Okruženje je uređena lista vezanja oblika \(x : T\).
+Tipska pravila slijede standardnu formulaciju:
+
+\begin{equation}
+    \frac{x : T \in \Gamma}{\Gamma \vdash x : T}
+\end{equation}
+\begin{equation}
+    \frac{}{\Gamma \vdash \star : \square}
+\end{equation}
+\begin{equation}
+    \frac{\Gamma \vdash A : s_1 \qquad \Gamma, x : A \vdash B : s_2}
+         {\Gamma \vdash \Pi x : A.\ B : s_2}
+\end{equation}
+\begin{equation}
+    \frac{\Gamma, x : A \vdash e : B}
+         {\Gamma \vdash \lambda x : A.\ e : \Pi x : A.\ B}
+\end{equation}
+\begin{equation}
+    \frac{\Gamma \vdash f : \Pi x : A.\ B \qquad \Gamma \vdash a : A}
+         {\Gamma \vdash f\ a : B[x := a]}
+    \label{eq:tc-app}
+\end{equation}
+
+Pravilo~\ref{eq:tc-app} srž je zavisnih tipova: tip rezultata primjene \(B[x
+:= a]\) nastaje supstitucijom konkretnog argumenta \(a\) u tijelo Pi-tipa.
+Time tip rezultata može ovisiti o predanoj vrijednosti, a ne samo o njenom
+tipu.
+
+\subsection{Definicijska jednakost}
+
+Provjera tipova zavisnih tipova ne može se osloniti samo na sintaktičku
+jednakost. Dva tipa mogu biti različito zapisana, ali semantički jednaka -
+primjerice \(Vec\ A\ (add\ 2\ 1)\) i \(Vec\ A\ 3\) isti su tip ako
+\texttt{add} daje odgovarajući rezultat.
+
+Sustav stoga koristi \emph{definicijsku jednakost} \engl{definitional equality}:
+dva izraza smatraju se jednakim ako se oba reduciraju na isti izraz u normalnoj
+formi. Ovo je standardni pristup u jezicima sa zavisnim tipovima
+\cite{coquand:inria-00076024} i ono što razlikuje zavisne tipove od
+jednostavnih generičkih sustava poput sistema F.
+
+\section{Semantika jezika}
+
+Semantika jezika jest operacijska i definirana je dvama pravilima redukcije.
+
+\emph{Beta-redukcija} opisuje poziv funkcije:
+\[
+    (\lambda x : A.\ e)\ v \longrightarrow_\beta e[x := v]
+\]
+
+\emph{Jota-redukcija} opisuje ponašanje eliminatora primijenjenog na
+konstruktorski izraz -- odabire granu koja odgovara konstruktoru i
+supstituira argumente konstruktora:
+\[
+    T\text{\_}elim\ M\ b_0 \cdots b_k\ (c_i\ \overline{a})
+    \longrightarrow_\iota b_i\ \overline{a}
+\]
+
+Za rekurzivne konstruktore, rekurzivni argumenti automatski dobivaju
+indukcijsku hipotezu, što odgovara principu strukturalne rekurzije. Time je
+rekurzija u jeziku uvijek strukturalno smanjujuća i svaki dobro tipizirani
+program terminira u konačnom broju koraka.
+
+\section{Ograničenja sustava}
+
+Eksperimentalna priroda jezika povlači nekoliko svjesnih ograničenja:
+
+\begin{itemize}
+    \item \textbf{Nema opće rekurzije} - jedina rekurzija dostupna u jeziku
+    jest ona implicitno sadržana u eliminatoru induktivnih tipova. Ovo
+    garantira terminaciju svih programa, ali onemogućuje definiranje petlji i
+    općenitih rekurzivnih funkcija izvan strukturalne rekurzije.
+
+    \item \textbf{Nema zaključivanja tipova} - sve anotacije tipova moraju biti
+    eksplicitno navedene. Jedina iznimka su anotacije grana eliminatora koje
+    parser derivira automatski iz eliminatorovog Pi-tipa.
+
+    \item \textbf{Jedna razina svemira} - jezik koristi samo \(\star\) i
+    \(\square\) bez kumulativne hijerarhije. To znači da nije moguće
+    parametrizirati funkciju samim svemirom \(\star\), što je ograničenje
+    u odnosu na puni CIC.
+
+    \item \textbf{Bez konstruktorskog podudaranja} - za analizu konstruktora koristi
+    se isključivo \texttt{elim}, bez sintaksnog šećera uzorkovnog podudaranja
+    kakav nude Agda i Idris. Ovo čini jezik verboznijim, ali implementaciju
+    jednostavnijom i teorijski transparentnijom.
+
+    \item \textbf{IO nije induktivni tip} - ulazno-izlazne operacije
+    implementirane su kao ugrađeni primitivi s fiksnim tipovima, a ne kao
+        pravi induktivni tip. Posljedica je da se nad \texttt{IO} ne može
+    koristiti \texttt{elim} niti definirati vlastite IO kombinatore.
+\end{itemize}
+
+Sva navedena ograničenja svjesne su projektne odluke. Cilj je bio zadržati
+implementaciju preglednom i fokusiranom na demonstraciju zavisnih tipova u
+sigurnosnom kontekstu.
+
+\chapter{Implementacija}
+
+\section{Arhitektura prevoditelja/interpretera}
+
+\section{Leksička analiza}
+
+\section{Parsiranje}
+
+\section{Reprezentacija apstraktnog sintaksnog stabla}
+
+\section{Provjera tipova}
+
+\section{Evaluacija programa}
+
+\section{Implementacija zavisnih tipova}
+
+\chapter{Primjena na problem računalne sigurnosti}
+
+\section{Sigurno indeksiranje polja}
+
+\subsection{Opis problema}
+
+Jedna od najčešćih grešaka pri izvođenju programa je indeksiranje polja memorije
+izvan njegovih granica. Razni jezici nude rješenje za ovaj problem na razne
+načine, ali tri česta rješenja koja se nalaze u imperativnim jezicima su
+često katastrofalna za program:
+\begin{itemize}
+    \item prešutna greška - jezici niske razine apstrakcije poput C-a često
+        indeksiranje tretiraju kao čitanje memorije na nekom odmaku. U ovakvim
+        jezicima rezultati variraju od čitanja neincijaliranog dijela memorije
+        ili segmentacijske greške pa do malicioznog čitanja privatnog dijela
+        memorije.
+    \item kružno indeksiranje - neki jezici poput Python-a rješavaju ovaj
+        problem tako što se svako indeksiranje tretira kao kružno. Ovim načinom
+        spriječava se čitanje memorije izvan polja, ali ako programer ne očekuje
+        to svojstvo svejedno dolazi do programskih grešaka.
+    \item bacanje grešaka - jezici poput Jave rješavaju ovaj problem bacanjem
+        greške. Ovo rješenje također nudi sigurnost od čitanja memorije izvan
+        granica polja, ali programeri u praksi često ne očekuju grešku, pa
+        dolazi do komletnog zaustavljanja izvođenja programa.
+\end{itemize}
+Gore navedeni primjeri variraju po intenzitetu ranjivosti, ali svaki na svoj
+način predstavlja određenu ranjivost programa. Iako postoje alternativna
+rješenja ovog problema mi ćemo se fokusirati na sigurno indeksiranje koristeći
+dokaz o sigurnosti budući da je ovaj pristup jedinstveno moguć koristeći zavisne
+tipove.
+
+\subsection{Implementacija u razvijenom jeziku}
+
+\subsection{Sigurnosna svojstva}
+
+\subsection{Implementacija u konvencionalnom jeziku}
+
+\subsection{Usporedba}
+
+% TODO: definirati drugi problem
+% \section{Još jedan problem}
+%
+% \subsection{Opis problema}
+%
+% \subsection{Implementacija u razvijenom jeziku}
+%
+% \subsection{Sigurnosna svojstva}
+%
+% \subsection{Implementacija u konvencionalnom jeziku}
+%
+% \subsection{Usporedba}
+
+\chapter{Rasprava}
+
+\section{Zajednička opažanja}
+
+\section{Prednosti zavisnih tipova}
+
+\section{Ograničenja razvijenog jezika}
+
+\section{Moguća buduća proširenja}
+
+\chapter{Zaključak}
+
+\bibliography{literatura}
+
+\begin{izjavaoui}
+
+Za izradu ovog rada korišteni su modeli generativne umjetne inteligencije, specifično:
+\begin{itemize}
+    \item GPT-5.3-mini tvrtke OpenAI
+    \item Sonnet 4.6 tvrtke Antrhopic
+\end{itemize}
+
+\paragraph{Osvrt na korištenje umjetne inteligencije:}
+    Generativna umjetna inteligencija (GenAI) primarno je korištena kao alat za pomoć
+    pri pretraživanju podataka na internetu, planiranju rada i provjere
+    gramatičke ispravnosti. Početni kod
+    implementacije potpomognut je GenAI-om, kao i dijelovi koji nisu primarni
+    fokus rada, ali svejedno ključni za ispravnu funkcionalnost. Značajan dio
+    koda generiranog pomoću GenAI trebao je biti revidiran kako bi
+    implementacija bila ispravna i funkcionalna prema zahtjevima rada.
+    Iz vlastitog iskustva primjećujem da dugotrajan rad GenAI bez usmjerenja
+    vodi prema implementacijama postojećih rješenja što ju čini teško
+    primijenjivom pri razvoju nove ideje.
+
+\paragraph{Izjava o korištenju umjetne inteligencije:}
+    Potvrđujem da sam tijekom izrade ovog diplomskog rada koristio umjetnu inteligenciju u skladu s
+    Politikom primjerenog korištenja umjetne inteligencije na Fakultetu elektrotehnike i računarstva,
+    te da umjetna inteligencija nije zamijenila moje kritičko razmišljanje niti moj doprinos.
+
+\end{izjavaoui}
+
+\backmatter
+
+\end{document}

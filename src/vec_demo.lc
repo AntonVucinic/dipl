@@ -1,0 +1,93 @@
+-- vec_demo.lc
+--
+-- Demonstrates length-indexed vectors (Vec Nat n) and safe indexing.
+--
+-- The vector [7, 5, 3] has type Vec Nat 3.
+-- The user enters a number. We look it up with safe_get, which
+-- uses Vec_elim to structurally recurse over the vector.
+--
+-- safe_get : Pi n:Nat. Vec Nat n -> Nat -> Maybe Nat
+--
+-- The type Vec Nat n encodes the length. When n = 0 the base case
+-- of Vec_elim forces us to return `nothing` — there is no way to
+-- produce a value from an empty vector. When n = succ m the step
+-- case has access to the head and a recursive result for the tail.
+-- The bounds check is therefore a *consequence of the type*, not
+-- a separate runtime assertion.
+
+-- ----------------------------------------------------------------
+-- Type definitions (prelude already provides Unit, Nat, List)
+-- ----------------------------------------------------------------
+
+inductive Vec (A : *) (n : Nat) : * :=
+  | vnil  : Vec A zero
+  | vcons : Pi m:Nat. A -> Vec A m -> Vec A (succ m)
+end
+
+inductive Maybe (A : *) : * :=
+  | nothing : Maybe A
+  | just    : A -> Maybe A
+end
+
+-- ----------------------------------------------------------------
+-- The demo: ask for an index, look it up in [7, 5, 3]
+-- ----------------------------------------------------------------
+
+effect main :=
+  -- Announce the vector
+  bind Unit Unit (putStr "Vector: [7, 5, 3]  (type Vec Nat 3)\n")              (\u:Unit.
+  bind Unit Unit (putStr "Enter index (0, 1, or 2): ")                         (\u:Unit.
+
+  -- Read one character
+  bind Nat Unit getChar                                                        (\raw:Nat.
+
+  -- Convert ASCII digit to Nat value by subtracting 48.
+  -- sub c 48  via  Nat_elim (\_.Nat) c (\k.\ih. pred ih) 48
+  -- where  pred x = Nat_elim (\_.Nat) zero (\p.\q. p) x
+  bind Nat Unit
+    (pure Nat
+      (Nat_elim
+        (\n:Nat. Nat)
+        raw
+        (\k:Nat. \ih:Nat. Nat_elim
+          (\x:Nat. Nat)
+          zero
+          (\p:Nat. \q:Nat. p)
+          ih)
+        48))                                                                   (\idx:Nat.
+
+  -- safe_get via Vec_elim.
+  -- Motive:  \n:Nat. \v:Vec Nat n. Nat -> Maybe Nat
+  -- vnil  branch: \k:Nat. nothing Nat
+  -- vcons branch: \m:Nat. \h:Nat. \t:Vec Nat m. \ih:Nat->Maybe Nat. \k:Nat.
+  --   k=0     -> just h
+  --   k=succ  -> ih k'
+  bind (Maybe Nat) Unit
+    (pure (Maybe Nat)
+      (Vec_elim Nat
+        (\n:Nat. \v:Vec Nat n. Nat -> Maybe Nat)
+        (\k:Nat. nothing Nat)
+        (\m:Nat. \h:Nat. \t:Vec Nat m. \ih:Nat -> Maybe Nat. \k:Nat.
+          Nat_elim (\x:Nat. Maybe Nat)
+            (just Nat h)
+            (\k2:Nat. \prev:Maybe Nat. ih k2)
+            k)
+        3
+        (vcons Nat 2 7
+          (vcons Nat 1 5
+            (vcons Nat 0 3
+              (vnil Nat))))
+        idx))
+  (\result:Maybe Nat.
+
+  -- Print result
+  Maybe_elim Nat (\r:Maybe Nat. IO Unit)
+    (putStr "Out of range — no element at that index.\n")
+    (\v:Nat.
+      bind Unit Unit (putStr "Element: ") (\u:Unit.
+      -- Print the digit: add 48 to get ASCII code
+      bind Unit Unit
+        (putChar (Nat_elim (\x:Nat. Nat) 48
+                   (\k:Nat. \ih:Nat. succ ih) v))
+        (\u:Unit. putChar 10)))
+    result)))))

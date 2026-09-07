@@ -1,0 +1,7 @@
+-- echo.lc — read one character and echo it
+
+effect echoChar := bind Nat Unit getChar (\c:Nat. putChar c)
+
+effect printNewline := putChar 10
+
+effect main := bind Unit Unit echoChar (\u:Unit. printNewline)
